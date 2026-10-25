@@ -2,6 +2,10 @@
 <html lang="en">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#17161a">
 <title>Bomber 81</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -24,6 +28,7 @@
   }
   html, body { height: 100%; }
   body {
+    margin: 0;
     background: var(--case);
     color: var(--label);
     font-family: var(--font-term);
@@ -126,6 +131,84 @@
     opacity: .8;
     margin: 0;
   }
+  .rotate { display: none; }
+  #fsBtn[hidden] { display: none !important; }
+
+  /* Phone in portrait: suggest turning it */
+  @media (orientation: portrait) and (max-width: 600px) {
+    .rotate {
+      display: block;
+      margin: 0;
+      text-align: center;
+      font-family: var(--font-pixel);
+      font-size: 9px;
+      letter-spacing: 0.08em;
+      color: var(--accent);
+      text-transform: uppercase;
+    }
+  }
+
+  /* Phone in landscape: screen fills the height, controls on either side */
+  @media (orientation: landscape) and (max-height: 540px) {
+    html, body { overflow: hidden; overscroll-behavior: none; }
+    body {
+      padding-block: max(6px, env(safe-area-inset-top, 0px)) max(6px, env(safe-area-inset-bottom, 0px));
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    .unit {
+      --side: clamp(72px, 13vw, 150px);
+      --screen-h: calc(100dvh - 12px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+      width: auto;
+      height: 100%;
+      display: grid;
+      grid-template-columns: var(--side) auto var(--side);
+      grid-template-rows: repeat(3, 1fr);
+      grid-template-areas:
+        "pal tv bomb"
+        "snd tv bomb"
+        "fs  tv bomb";
+      gap: 8px;
+      align-items: stretch;
+    }
+    .strip, .note, .rotate { display: none; }
+    .keys { display: contents; }
+    .tv {
+      grid-area: tv;
+      align-self: center;
+      width: min(calc(var(--screen-h) * 4 / 3), calc(100vw - 2 * var(--side) - 64px));
+      padding: 0;
+      border: 0;
+      border-radius: 6px;
+      box-shadow: none;
+    }
+    .screen { border-radius: 4px; }
+    button {
+      font-size: 9px;
+      padding: 6px 4px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      min-width: 0;
+      touch-action: manipulation;
+    }
+    button .k { margin-right: 0; }
+    #palBtn { grid-area: pal; }
+    #sndBtn { grid-area: snd; }
+    #fsBtn { grid-area: fs; }
+    #bombBtn {
+      grid-area: bomb;
+      max-width: none;
+      font-size: 11px;
+      line-height: 1.6;
+      padding-block: 8px;
+      background: linear-gradient(#5a2422, #3a1716);
+    }
+    /* no fullscreen button: let the other two share the column */
+    .unit.no-fs { grid-template-rows: repeat(2, 1fr); grid-template-areas: "pal tv bomb" "snd tv bomb"; }
+  }
 </style>
 
 <div class="unit">
@@ -140,7 +223,9 @@
     <button id="bombBtn" type="button"><span class="k">SPACE</span>Drop bomb</button>
     <button id="palBtn" type="button"><span class="k">C</span><span id="palLabel">Colour</span></button>
     <button id="sndBtn" type="button"><span class="k">M</span><span id="sndLabel">Sound on</span></button>
+    <button id="fsBtn" type="button" hidden><span class="k">F</span><span id="fsLabel">Full screen</span></button>
   </div>
+  <p class="rotate">Turn your phone sideways to fill the screen</p>
   <p class="note">Your fuel is gone and the plane drops one row every time it crosses the screen. Flatten the city with bombs, one in the air at a time, and touch down on the empty street. After the 1982 ZX81 "Bomber" and the Blitz games that followed Atari's Canyon Bomber.</p>
 </div>
 
@@ -531,9 +616,9 @@
       drawCity(demo.heights, demo.styles);
       drawGround();
       drawPlane(demo.x, 13 * 8);
-      text('PRESS SPACE TO START', 5, 23, P.fg);
+      text('SPACE OR TAP TO START', 4, 23, P.fg);
       // ZX81 inverse "K" cursor
-      if ((st.t >> 5) & 1) text('K', 25, 23, P.fg, { inverse: true });
+      if ((st.t >> 5) & 1) text('K', 26, 23, P.fg, { inverse: true });
     } else {
       hud();
       drawCity(st.heights, st.styles);
@@ -622,7 +707,35 @@
       if (!e.repeat) action();
     } else if (e.code === 'KeyC') togglePal();
     else if (e.code === 'KeyM') toggleSound();
+    else if (e.code === 'KeyF' && fsSupported) toggleFullscreen();
   });
+
+  // ---- Fullscreen (Android and desktop; iPhone Safari has no API, so the button stays hidden) ----
+  const fsBtn = document.getElementById('fsBtn');
+  const fsLabel = document.getElementById('fsLabel');
+  const root = document.documentElement;
+  const fsSupported = !!(document.fullscreenEnabled || document.webkitFullscreenEnabled);
+  const fsElement = () => document.fullscreenElement || document.webkitFullscreenElement;
+  function toggleFullscreen() {
+    try {
+      if (fsElement()) {
+        (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+      } else {
+        const req = root.requestFullscreen || root.webkitRequestFullscreen;
+        const p = req.call(root, { navigationUI: 'hide' });
+        if (p && p.then) p.then(() => screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape').catch(() => {})).catch(() => {});
+      }
+    } catch (e) {}
+  }
+  if (fsSupported) {
+    fsBtn.hidden = false;
+    fsBtn.addEventListener('click', e => { toggleFullscreen(); e.currentTarget.blur(); });
+    const syncFs = () => { fsLabel.textContent = fsElement() ? 'Exit full' : 'Full screen'; };
+    document.addEventListener('fullscreenchange', syncFs);
+    document.addEventListener('webkitfullscreenchange', syncFs);
+  } else {
+    document.querySelector('.unit').classList.add('no-fs');
+  }
   cv.addEventListener('pointerdown', e => { e.preventDefault(); action(); });
   document.getElementById('bombBtn').addEventListener('pointerdown', e => { e.preventDefault(); action(); });
   document.getElementById('bombBtn').addEventListener('keydown', e => { if (e.code === 'Space' || e.code === 'Enter') e.stopPropagation(); });
