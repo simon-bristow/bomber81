@@ -1,0 +1,634 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Bomber 81</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap">
+<style>
+  /* Layout: one centred "TV" holding a 256x192 ZX81-style screen, keycap controls underneath. Single dark look by choice. */
+  :root {
+    --case: #17161a;      /* ZX81 case black */
+    --case-edge: #2a282f;
+    --bezel: #0b0b0d;
+    --label: #c9c6bd;     /* silk-screen grey on the case */
+    --accent: #d8312c;    /* the red "ZX81" stripe */
+    --key: #2f2d34;
+    --key-top: #3d3a43;
+    --key-text: #eeeae0;
+    --font-pixel: "Press Start 2P", "Courier New", monospace;
+    --font-term: "VT323", "Courier New", monospace;
+    color-scheme: dark;
+  }
+  html, body { height: 100%; }
+  body {
+    background: var(--case);
+    color: var(--label);
+    font-family: var(--font-term);
+    font-size: 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    padding-block: 16px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    box-sizing: border-box;
+    overflow-x: hidden;
+  }
+  .unit {
+    width: min(100%, 900px, calc((100vh - 230px) * 4 / 3));
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .strip {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    font-family: var(--font-pixel);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  .strip .brand { color: var(--key-text); }
+  .strip .brand b { color: var(--accent); font-weight: normal; }
+  .tv {
+    position: relative;
+    background: var(--bezel);
+    border: 2px solid var(--case-edge);
+    border-radius: 10px;
+    padding: 14px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.55), inset 0 0 0 1px #000;
+  }
+  .screen {
+    position: relative;
+    width: 100%;
+    max-width: 100%;
+    aspect-ratio: 4 / 3;
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    cursor: crosshair;
+    touch-action: manipulation;
+  }
+  /* CRT scanlines + vignette */
+  .screen::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      repeating-linear-gradient(to bottom, rgba(0,0,0,.13) 0 1px, transparent 1px 3px),
+      radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,.35) 100%);
+    mix-blend-mode: multiply;
+  }
+  .keys {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: center;
+  }
+  button {
+    font-family: var(--font-pixel);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    color: var(--key-text);
+    background: linear-gradient(var(--key-top), var(--key));
+    border: 1px solid #000;
+    border-bottom-width: 4px;
+    border-radius: 4px;
+    padding: 12px 14px 10px;
+    cursor: pointer;
+    text-transform: uppercase;
+    -webkit-tap-highlight-color: transparent;
+  }
+  button:active { transform: translateY(2px); border-bottom-width: 2px; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button .k { color: var(--accent); margin-right: 6px; }
+  #bombBtn { flex: 1 1 220px; max-width: 360px; font-size: 13px; padding-block: 16px 14px; }
+  .note {
+    max-width: 62ch;
+    text-align: center;
+    line-height: 1.15;
+    color: var(--label);
+    opacity: .8;
+    margin: 0;
+  }
+</style>
+
+<div class="unit">
+  <div class="strip">
+    <span class="brand">Bomber <b>81</b></span>
+    <span>Sinclair ZX81 · 16K</span>
+  </div>
+  <div class="tv">
+    <div class="screen"><canvas id="c" width="1024" height="768" aria-label="Bomber game screen"></canvas></div>
+  </div>
+  <div class="keys">
+    <button id="bombBtn" type="button"><span class="k">SPACE</span>Drop bomb</button>
+    <button id="palBtn" type="button"><span class="k">C</span><span id="palLabel">Colour</span></button>
+    <button id="sndBtn" type="button"><span class="k">M</span><span id="sndLabel">Sound on</span></button>
+  </div>
+  <p class="note">Your fuel is gone and the plane drops one row every time it crosses the screen. Flatten the city with bombs, one in the air at a time, and touch down on the empty street. After the 1982 ZX81 "Bomber" and the Blitz games that followed Atari's Canyon Bomber.</p>
+</div>
+
+<script>
+(() => {
+  // ---- Screen geometry: ZX81 is 32x24 characters of 8x8 pixels ----
+  const W = 256, H = 192, S = 4;
+  const GROUND = 22, FIRST_ROW = 2, FIRST_COL = 2, NB = 28;
+  const cv = document.getElementById('c');
+  const ctx = cv.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
+  const reduceMotion = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // ---- Palettes ----
+  const PAL = {
+    zx81: {
+      bg: '#d9d9cf', fg: '#141414', dim: '#141414',
+      blds: ['#141414'], win: '#d9d9cf', plane: '#141414', bomb: '#141414',
+      ground: '#141414', boom: ['#141414', '#141414', '#d9d9cf'],
+    },
+    colour: {
+      bg: '#000000', fg: '#ffffff', dim: '#00d7d7',
+      blds: ['#d70000', '#d700d7', '#00d7d7', '#00d700', '#d7d700', '#d7d7d7', '#ff00ff', '#00ffff'],
+      win: '#000000', plane: '#ffffff', bomb: '#ffff00',
+      ground: '#00d700', boom: ['#ffff00', '#ff0000', '#ffffff'],
+    },
+  };
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem('bomber81.' + k); return v === null ? d : v; } catch (e) { return d; } },
+    set(k, v) { try { localStorage.setItem('bomber81.' + k, v); } catch (e) {} },
+  };
+  let palName = store.get('pal', 'zx81') === 'colour' ? 'colour' : 'zx81';
+  let P = PAL[palName];
+
+  // ---- Sprites ('#' = ink) ----
+  const PLANE = [
+    '................',
+    '##..............',
+    '###.......###...',
+    '###############.',
+    '.###############',
+    '..#############.',
+    '.....#####......',
+    '................',
+  ];
+  const BOMB = [
+    '#.##.#',
+    '.####.',
+    '..##..',
+    '.####.',
+    '######',
+    '######',
+    '.####.',
+    '..##..',
+  ];
+  // One story = one 8x8 cell; buildings are 7px wide with a 1px alley.
+  const PATTERNS = [
+    ['#######', '#.#.#.#', '#.#.#.#', '#######', '#######', '#.#.#.#', '#.#.#.#', '#######'],
+    ['#######', '##.#.##', '##.#.##', '#######', '#######', '##.#.##', '##.#.##', '#######'],
+    ['#######', '#.....#', '#######', '#######', '#.....#', '#######', '#######', '#######'],
+    ['#######', '#..#..#', '#..#..#', '#######', '#..#..#', '#..#..#', '#######', '#######'],
+  ];
+
+  function px(x, y, w, h, c) { ctx.fillStyle = c; ctx.fillRect(Math.round(x) * S, Math.round(y) * S, w * S, h * S); }
+  function sprite(rows, x, y, c) {
+    ctx.fillStyle = c;
+    x = Math.round(x); y = Math.round(y);
+    for (let r = 0; r < rows.length; r++) {
+      const row = rows[r];
+      for (let i = 0; i < row.length; i++) if (row[i] === '#') ctx.fillRect((x + i) * S, (y + r) * S, S, S);
+    }
+  }
+  function text(str, col, row, c, opt = {}) {
+    const size = opt.big ? 16 : 8;
+    ctx.font = `${size * S}px "Press Start 2P", monospace`;
+    ctx.textBaseline = 'top';
+    const x = opt.center ? (W - str.length * size) / 2 : col * 8;
+    if (opt.inverse) {
+      px(x, row * 8, str.length * size, size, c);
+      ctx.fillStyle = P.bg;
+    } else ctx.fillStyle = c;
+    ctx.fillText(str, x * S, row * 8 * S + (opt.big ? 0 : S * 0.5));
+  }
+  const pad = (n, w) => String(n).padStart(w, '0');
+  const rand = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
+
+  // ---- Sound: a little beeper ----
+  let actx = null, muted = store.get('muted', '0') === '1', whistle = null, engine = null;
+  function ac() {
+    if (!actx) { try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return null; } }
+    if (actx.state === 'suspended') actx.resume();
+    return actx;
+  }
+  function tone(f0, f1, dur, type = 'square', vol = 0.06, delay = 0) {
+    const a = ac(); if (!a || muted) return null;
+    const t = a.currentTime + delay;
+    const o = a.createOscillator(), g = a.createGain();
+    o.type = type;
+    o.frequency.setValueAtTime(f0, t);
+    if (f1) o.frequency.exponentialRampToValueAtTime(f1, t + dur);
+    g.gain.setValueAtTime(vol, t);
+    g.gain.setValueAtTime(vol, t + dur * 0.8);
+    g.gain.linearRampToValueAtTime(0, t + dur);
+    o.connect(g).connect(a.destination);
+    o.start(t); o.stop(t + dur + 0.02);
+    return { o, g };
+  }
+  function noise(dur, vol = 0.25, f0 = 2400, f1 = 120) {
+    const a = ac(); if (!a || muted) return;
+    const len = Math.floor(a.sampleRate * dur);
+    const buf = a.createBuffer(1, len, a.sampleRate);
+    const d = buf.getChannelData(0);
+    // stepped noise sounds more "8-bit" than white noise
+    let v = 0;
+    for (let i = 0; i < len; i++) { if (i % 6 === 0) v = Math.random() * 2 - 1; d[i] = v; }
+    const src = a.createBufferSource(); src.buffer = buf;
+    const f = a.createBiquadFilter(); f.type = 'lowpass';
+    f.frequency.setValueAtTime(f0, a.currentTime);
+    f.frequency.exponentialRampToValueAtTime(f1, a.currentTime + dur);
+    const g = a.createGain();
+    g.gain.setValueAtTime(vol, a.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, a.currentTime + dur);
+    src.connect(f).connect(g).connect(a.destination);
+    src.start();
+  }
+  function tune(notes, step = 0.09, vol = 0.05) { notes.forEach((n, i) => n && tone(n, 0, step * 0.9, 'square', vol, i * step)); }
+  function stopWhistle() {
+    if (whistle && actx) { try { whistle.g.gain.cancelScheduledValues(0); whistle.g.gain.setValueAtTime(0, actx.currentTime); whistle.o.stop(); } catch (e) {} }
+    whistle = null;
+  }
+  function engineOn() {
+    const a = ac(); if (!a || muted || engine) return;
+    const o = a.createOscillator(), lfo = a.createOscillator(), lg = a.createGain(), f = a.createBiquadFilter(), g = a.createGain();
+    o.type = 'square'; o.frequency.value = 58;
+    lfo.type = 'square'; lfo.frequency.value = 9; lg.gain.value = 6;
+    lfo.connect(lg).connect(o.frequency);
+    f.type = 'lowpass'; f.frequency.value = 320;
+    g.gain.value = 0.025;
+    o.connect(f).connect(g).connect(a.destination);
+    o.start(); lfo.start();
+    engine = { o, lfo, g };
+  }
+  function engineOff() {
+    if (!engine) return;
+    try { engine.o.stop(); engine.lfo.stop(); } catch (e) {}
+    engine = null;
+  }
+
+  // ---- Game state ----
+  const st = {
+    mode: 'title', level: 1, score: 0, hi: parseInt(store.get('hi', '0'), 10) || 0,
+    heights: [], styles: [], plane: null, bomb: null, parts: [], debris: [],
+    t: 0, timer: 0, flash: 0, shake: 0, bonus: 0, newHi: false,
+  };
+
+  function makeCity(level) {
+    const maxH = Math.min(5 + 2 * level, 16), minH = Math.min(1 + Math.floor(level / 2), 7);
+    const heights = [], styles = [];
+    for (let i = 0; i < NB; i++) {
+      heights.push(rand(minH, maxH));
+      styles.push({ pat: rand(0, PATTERNS.length - 1), c: rand(0, 7), ant: Math.random() < 0.22 });
+    }
+    return { heights, styles };
+  }
+
+  // Title-screen demo city
+  const demo = (() => {
+    const c = makeCity(1);
+    c.heights = c.heights.map(() => rand(1, 7));
+    return { ...c, x: -16 };
+  })();
+
+  function startLevel() {
+    const c = makeCity(st.level);
+    st.heights = c.heights; st.styles = c.styles;
+    st.plane = { x: -16, y: FIRST_ROW * 8, vx: Math.min(0.9 + 0.18 * (st.level - 1), 2.4) };
+    st.bomb = null; st.parts = []; st.debris = []; st.flash = 0; st.shake = 0;
+    st.mode = 'play';
+    engineOn();
+    tune([523, 659, 784, 1047], 0.08);
+  }
+  function newGame() { st.level = 1; st.score = 0; st.newHi = false; startLevel(); }
+
+  function floorsLeft() { return st.heights.reduce((a, b) => a + b, 0); }
+
+  function dropBomb() {
+    if (st.mode !== 'play' || st.bomb) return;
+    const p = st.plane;
+    const col = Math.floor((p.x + 8) / 8);
+    if (col < 0 || col > 31) return;
+    st.bomb = { col, y: p.y + 8, vy: 1.2 };
+    stopWhistle();
+    whistle = tone(1500, 260, 1.3, 'square', 0.035);
+  }
+
+  function burst(x, y, n, spread, up) {
+    for (let i = 0; i < n; i++) {
+      st.parts.push({
+        x, y,
+        vx: (Math.random() - 0.5) * spread,
+        vy: -Math.random() * up - 0.3,
+        life: rand(25, 55),
+        c: P.boom[i % P.boom.length],
+      });
+    }
+  }
+
+  function hitBuilding(i) {
+    const h = st.heights[i];
+    const removed = Math.min(rand(3, 6), h);
+    const topRow = GROUND - h;
+    st.debris.push({ col: i + FIRST_COL, row: topRow, rows: removed, t: 22 });
+    st.heights[i] = h - removed;
+    st.score += removed * 10 * st.level;
+    burst((i + FIRST_COL) * 8 + 3, topRow * 8 + 2, 24, 2.6, 2.6);
+    st.shake = reduceMotion ? 0 : 5;
+    stopWhistle();
+    noise(0.45, 0.3);
+    tone(180, 50, 0.25, 'square', 0.05);
+    if (floorsLeft() === 0) {
+      st.mode = 'landing';
+      tune([392, 523, 659, 784, 659, 784, 1047], 0.1);
+    }
+  }
+
+  function crash() {
+    st.mode = 'crash';
+    st.timer = 110;
+    st.flash = reduceMotion ? 0 : 18;
+    st.shake = reduceMotion ? 0 : 12;
+    const p = st.plane;
+    burst(p.x + 12, p.y + 4, 60, 3.5, 3);
+    p.dead = true;
+    st.bomb = null;
+    stopWhistle(); engineOff();
+    noise(1.4, 0.45, 3000, 60);
+    tone(400, 40, 1.2, 'sawtooth', 0.05);
+  }
+
+  function finishGame() {
+    st.mode = 'over';
+    if (st.score > st.hi) { st.hi = st.score; st.newHi = true; store.set('hi', String(st.hi)); }
+    tune([392, 370, 349, 330, 0, 262], 0.16, 0.05);
+  }
+
+  function landed() {
+    st.mode = 'landed';
+    st.bonus = 100 * st.level;
+    st.score += st.bonus;
+    if (st.score > st.hi) { st.hi = st.score; st.newHi = true; store.set('hi', String(st.hi)); }
+    engineOff();
+    tune([523, 659, 784, 1047, 0, 784, 1047, 1319], 0.11, 0.05);
+  }
+
+  function action() {
+    ac();
+    if (st.mode === 'title' || st.mode === 'over') newGame();
+    else if (st.mode === 'landed') { st.level++; startLevel(); }
+    else if (st.mode === 'play') dropBomb();
+  }
+
+  // ---- Update ----
+  function update() {
+    st.t++;
+    if (st.flash > 0) st.flash--;
+    if (st.shake > 0) st.shake--;
+
+    if (st.mode === 'title') {
+      demo.x += 1;
+      if (demo.x > W) demo.x = -16;
+    }
+
+    const p = st.plane;
+    if (st.mode === 'play') {
+      p.x += p.vx;
+      if (p.x >= W) {
+        p.x = -16;
+        p.y = Math.min(p.y + 8, (GROUND - 1) * 8);
+        tone(220, 160, 0.08, 'square', 0.03);
+      }
+      const row = Math.round(p.y / 8);
+      const bi = Math.floor((p.x + 15) / 8) - FIRST_COL;
+      if (bi >= 0 && bi < NB && st.heights[bi] > 0 && row >= GROUND - st.heights[bi]) crash();
+    } else if (st.mode === 'landing') {
+      const target = (GROUND - 1) * 8;
+      if (p.y < target) {
+        p.x += p.vx;
+        p.y = Math.min(target, p.y + 0.45);
+        if (p.x >= W) p.x = -16;
+      } else {
+        // rolling on the street: brake to a stop before the screen edge
+        p.vx = Math.max(0, p.vx - 0.012);
+        p.x += p.vx;
+        if (p.x > W - 18) { p.x = W - 18; p.vx = 0; }
+        if (p.vx === 0) landed();
+        else if (st.t % 6 === 0) st.parts.push({ x: p.x + 2, y: target + 7, vx: -0.4, vy: -0.2, life: 14, c: P.fg });
+      }
+    }
+
+    const b = st.bomb;
+    if (b && st.mode === 'play') {
+      b.vy = Math.min(b.vy + 0.11, 4);
+      b.y += b.vy;
+      const i = b.col - FIRST_COL;
+      const h = i >= 0 && i < NB ? st.heights[i] : 0;
+      if (b.y + 8 >= (GROUND - h) * 8) {
+        st.bomb = null;
+        if (h > 0) hitBuilding(i);
+        else { stopWhistle(); noise(0.2, 0.15, 900); burst(b.col * 8 + 3, GROUND * 8, 8, 1.6, 1.2); }
+      }
+    }
+
+    for (const q of st.parts) {
+      q.vy += 0.09; q.x += q.vx; q.y += q.vy; q.life--;
+      if (q.y > GROUND * 8 - 1) { q.y = GROUND * 8 - 1; q.vy *= -0.3; q.vx *= 0.6; }
+    }
+    st.parts = st.parts.filter(q => q.life > 0);
+    for (const d of st.debris) d.t--;
+    st.debris = st.debris.filter(d => d.t > 0);
+
+    if (st.mode === 'crash' && --st.timer <= 0) finishGame();
+  }
+
+  // ---- Draw ----
+  function drawCity(heights, styles) {
+    for (let i = 0; i < NB; i++) {
+      const h = heights[i]; if (!h) continue;
+      const s = styles[i];
+      const c = P.blds[s.c % P.blds.length];
+      const x = (i + FIRST_COL) * 8;
+      const top = GROUND - h;
+      for (let r = top; r < GROUND; r++) {
+        sprite(PATTERNS[s.pat], x, r * 8, c);
+      }
+      // roof line and the odd aerial
+      px(x, top * 8, 7, 1, c);
+      if (s.ant) { px(x + 3, top * 8 - 3, 1, 3, c); px(x + 2, top * 8 - 3, 3, 1, c); }
+    }
+  }
+  function drawGround() {
+    const y = GROUND * 8;
+    if (palName === 'zx81') {
+      // ZX81 "grey" chequer graphic
+      ctx.fillStyle = P.ground;
+      for (let yy = 0; yy < 8; yy++) for (let xx = (yy & 1); xx < W; xx += 2) ctx.fillRect(xx * S, (y + yy) * S, S, S);
+      px(0, y, W, 1, P.ground);
+    } else {
+      px(0, y, W, 8, '#007000');
+      px(0, y, W, 1, P.ground);
+      ctx.fillStyle = P.ground;
+      for (let xx = 0; xx < W; xx += 8) ctx.fillRect((xx + 2) * S, (y + 4) * S, 4 * S, S);
+    }
+  }
+  function drawPlane(x, y) {
+    sprite(PLANE, x, y, P.plane);
+    // spinning propeller
+    if ((st.t >> 2) & 1) px(x + 16, y + 2, 1, 4, P.plane);
+    else px(x + 16, y + 3, 1, 2, P.plane);
+  }
+  function hud() {
+    text('SCORE ' + pad(st.score, 5), 0, 0, P.fg);
+    text('HI ' + pad(st.hi, 5), 13, 0, P.fg);
+    text('LV ' + pad(st.level, 2), 27, 0, P.fg);
+  }
+  function box(lines, row) {
+    const w = 26, h = lines.length + 2, col = 3;
+    px(col * 8 - 2, row * 8 - 2, w * 8 + 4, h * 8 + 4, P.fg);
+    px(col * 8, row * 8, w * 8, h * 8, P.bg);
+    lines.forEach((l, i) => l && text(l.t, 0, row + 1 + i, l.c || P.fg, { center: true, inverse: l.inv }));
+  }
+
+  function draw() {
+    ctx.save();
+    const inv = st.flash > 0 && ((st.flash >> 1) & 1);
+    const savedP = P;
+    if (inv) P = { ...P, bg: P.fg, fg: P.bg, blds: [P.bg], plane: P.bg, bomb: P.bg, ground: P.bg, win: P.fg, boom: [P.bg] };
+    px(0, 0, W, H, P.bg);
+    if (st.shake) ctx.translate(rand(-2, 2) * S, rand(-1, 1) * S);
+
+    if (st.mode === 'title') {
+      text('HI ' + pad(st.hi, 5), 0, 0, P.fg);
+      text('BOMBER', 0, 2, P.fg, { big: true, center: true });
+      text('FLATTEN THE CITY, THEN LAND', 0, 5, P.dim, { center: true });
+      text('SPACE/TAP   DROP A BOMB', 4, 7, P.fg);
+      text('C           ZX81/COLOUR', 4, 8, P.fg);
+      text('M           SOUND', 4, 9, P.fg);
+      text('ONE BOMB IN THE AIR AT A TIME', 0, 11, P.dim, { center: true });
+      drawCity(demo.heights, demo.styles);
+      drawGround();
+      drawPlane(demo.x, 13 * 8);
+      text('PRESS SPACE TO START', 5, 23, P.fg);
+      // ZX81 inverse "K" cursor
+      if ((st.t >> 5) & 1) text('K', 25, 23, P.fg, { inverse: true });
+    } else {
+      hud();
+      drawCity(st.heights, st.styles);
+      drawGround();
+      for (const d of st.debris) {
+        ctx.fillStyle = P.boom[st.t % P.boom.length];
+        const x0 = d.col * 8;
+        for (let r = 0; r < d.rows; r++) for (let k = 0; k < 10; k++) {
+          if (Math.random() < d.t / 22) ctx.fillRect((x0 + rand(0, 6)) * S, ((d.row + r) * 8 + rand(0, 7)) * S, S, S);
+        }
+      }
+      if (st.bomb) sprite(BOMB, st.bomb.col * 8 + 1, st.bomb.y, P.bomb);
+      if (!st.plane.dead) drawPlane(st.plane.x, st.plane.y);
+      for (const q of st.parts) px(q.x, q.y, 1, 1, inv ? P.fg : q.c);
+
+      const alt = GROUND - 1 - Math.round(st.plane.y / 8);
+      if (st.mode === 'play' || st.mode === 'crash') {
+        text('FLOORS ' + pad(floorsLeft(), 3), 0, 23, P.fg, { inverse: true });
+        text('ALT ' + pad(Math.max(alt, 0), 2), 25, 23, P.fg);
+      } else if (st.mode === 'landing') {
+        if ((st.t >> 4) & 1) text('CITY CLEARED - LANDING', 0, 23, P.fg, { center: true, inverse: true });
+      }
+
+      if (st.mode === 'over') {
+        box([
+          { t: 'CRASHED!', inv: true },
+          null,
+          { t: 'SCORE ' + pad(st.score, 5) },
+          { t: st.newHi ? 'NEW HIGH SCORE' : 'LEVEL ' + st.level },
+          null,
+          { t: 'SPACE TO TRY AGAIN' },
+        ], 7);
+      } else if (st.mode === 'landed') {
+        box([
+          { t: 'SAFE LANDING', inv: true },
+          null,
+          { t: 'BONUS ' + pad(st.bonus, 4) },
+          { t: 'SCORE ' + pad(st.score, 5) },
+          null,
+          { t: 'SPACE FOR LEVEL ' + (st.level + 1) },
+        ], 6);
+      }
+    }
+    P = savedP;
+    ctx.restore();
+  }
+
+  // ---- Loop: fixed 60Hz steps ----
+  let last = performance.now(), acc = 0;
+  function frame(now) {
+    acc += Math.min(now - last, 100);
+    last = now;
+    while (acc >= 1000 / 60) { update(); acc -= 1000 / 60; }
+    draw();
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  // ---- Input ----
+  const palLabel = document.getElementById('palLabel');
+  const sndLabel = document.getElementById('sndLabel');
+  function syncLabels() {
+    palLabel.textContent = palName === 'zx81' ? 'Colour' : 'ZX81';
+    sndLabel.textContent = muted ? 'Sound off' : 'Sound on';
+  }
+  function togglePal() {
+    palName = palName === 'zx81' ? 'colour' : 'zx81';
+    P = PAL[palName];
+    for (const q of st.parts) q.c = P.boom[0];
+    store.set('pal', palName);
+    syncLabels();
+  }
+  function toggleSound() {
+    muted = !muted;
+    store.set('muted', muted ? '1' : '0');
+    if (muted) { stopWhistle(); engineOff(); }
+    else if (st.mode === 'play' || st.mode === 'landing') engineOn();
+    syncLabels();
+  }
+  syncLabels();
+
+  window.addEventListener('keydown', e => {
+    if (e.repeat && e.code !== 'Space') return;
+    if (e.code === 'Space' || e.code === 'Enter' || e.code === 'ArrowDown') {
+      e.preventDefault();
+      if (!e.repeat) action();
+    } else if (e.code === 'KeyC') togglePal();
+    else if (e.code === 'KeyM') toggleSound();
+  });
+  cv.addEventListener('pointerdown', e => { e.preventDefault(); action(); });
+  document.getElementById('bombBtn').addEventListener('pointerdown', e => { e.preventDefault(); action(); });
+  document.getElementById('bombBtn').addEventListener('keydown', e => { if (e.code === 'Space' || e.code === 'Enter') e.stopPropagation(); });
+  document.getElementById('bombBtn').addEventListener('click', e => { if (e.detail === 0) action(); });
+  // blur so a later Space press drops a bomb instead of re-pressing the button
+  document.getElementById('palBtn').addEventListener('click', e => { togglePal(); e.currentTarget.blur(); });
+  document.getElementById('sndBtn').addEventListener('click', e => { toggleSound(); e.currentTarget.blur(); });
+})();
+</script>
