@@ -139,7 +139,7 @@
     padding-block: 30px 26px;
     background: linear-gradient(#5a2422, #3a1716);
   }
-  #palBtn, #sndBtn, #fsBtn, #quitBtn {
+  #palBtn, #sndBtn, #fsBtn, #pauseBtn, #quitBtn {
     flex: 1 1 0;
     min-width: 0;
     padding: 10px 4px 8px;
@@ -148,13 +148,16 @@
     align-items: center;
     gap: 6px;
   }
-  #palBtn .k, #sndBtn .k, #fsBtn .k, #quitBtn .k { margin-right: 0; }
+  #palBtn .k, #sndBtn .k, #fsBtn .k, #pauseBtn .k, #quitBtn .k { margin-right: 0; }
   button, .rotate { line-height: 1.6; }
   @media (max-width: 600px) {
     .tv { padding: 10px; }
+    .strip { font-size: 8px; letter-spacing: 0.06em; }
+    .strip > span { white-space: nowrap; }
+    .strip .ver { font-size: 7px; margin-left: 2px; }
     .keys { padding-inline: 12px; }
     #bombBtn { font-size: 14px; padding-block: 34px 30px; }
-    #palBtn, #sndBtn, #fsBtn, #quitBtn { font-size: 9px; }
+    #palBtn, #sndBtn, #fsBtn, #pauseBtn, #quitBtn { font-size: 9px; }
   }
 
   /* Phone in portrait: suggest turning it */
@@ -188,10 +191,11 @@
       height: 100%;
       display: grid;
       grid-template-columns: var(--side) auto var(--side);
-      grid-template-rows: 1fr 1fr var(--bomb-h);
+      grid-template-rows: 1fr 1fr 1fr var(--bomb-h);
       grid-template-areas:
-        "pal tv   fs"
-        "snd tv   quit"
+        "pal tv   pause"
+        "snd tv   pause"
+        "fs  tv   quit"
         ".   bomb .";
       gap: 8px;
       align-items: stretch;
@@ -224,6 +228,7 @@
     #palBtn { grid-area: pal; }
     #sndBtn { grid-area: snd; }
     #fsBtn { grid-area: fs; }
+    #pauseBtn { grid-area: pause; }
     #quitBtn { grid-area: quit; }
     #bombBtn {
       grid-area: bomb;
@@ -235,14 +240,14 @@
       gap: 12px;
       background: linear-gradient(#5a2422, #3a1716);
     }
-    /* no fullscreen button (iPhone): Quit takes the whole right-hand column */
-    .unit.no-fs { grid-template-areas: "pal tv quit" "snd tv quit" ". bomb ."; }
+    /* no fullscreen button (iPhone): Sound takes its row */
+    .unit.no-fs { grid-template-areas: "pal tv pause" "snd tv pause" "snd tv quit" ". bomb ."; }
   }
 </style>
 
 <div class="unit">
   <div class="strip">
-    <span class="brand">Bomber <b>81</b> <span class="ver">v1.0</span></span>
+    <span class="brand">Bomber <b>81</b> <span class="ver">v1.01</span></span>
     <span>Sinclair ZX81 · 16K</span>
   </div>
   <div class="tv">
@@ -253,6 +258,7 @@
     <button id="palBtn" type="button"><span class="k">C</span><span id="palLabel">Colour</span></button>
     <button id="sndBtn" type="button"><span class="k">M</span><span id="sndLabel">Sound on</span></button>
     <button id="fsBtn" type="button" hidden><span class="k">F</span><span id="fsLabel">Full screen</span></button>
+    <button id="pauseBtn" type="button" disabled><span class="k">P</span><span id="pauseLabel">Pause</span></button>
     <button id="quitBtn" type="button" disabled><span class="k">Q</span>Quit</button>
   </div>
   <p class="rotate">Turn your phone sideways to fill the screen</p>
@@ -407,7 +413,7 @@
   const st = {
     mode: 'title', level: 1, score: 0, hi: parseInt(store.get('hi', '0'), 10) || 0,
     heights: [], styles: [], plane: null, bomb: null, parts: [], debris: [],
-    t: 0, timer: 0, flash: 0, shake: 0, bonus: 0, newHi: false,
+    t: 0, timer: 0, flash: 0, shake: 0, bonus: 0, newHi: false, paused: false,
   };
 
   function makeCity(level) {
@@ -433,6 +439,7 @@
     st.plane = { x: -16, y: FIRST_ROW * 8, vx: Math.min(0.9 + 0.18 * (st.level - 1), 2.4) };
     st.bomb = null; st.parts = []; st.debris = []; st.flash = 0; st.shake = 0;
     st.mode = 'play';
+    st.paused = false;
     engineOn();
     tune([523, 659, 784, 1047], 0.08);
   }
@@ -509,8 +516,17 @@
     tune([523, 659, 784, 1047, 0, 784, 1047, 1319], 0.11, 0.05);
   }
 
+  const canPause = () => st.mode === 'play' || st.mode === 'landing';
+  function togglePause() {
+    if (!canPause()) return;
+    st.paused = !st.paused;
+    if (st.paused) { stopWhistle(); engineOff(); tone(660, 0, 0.06, 'square', 0.04); }
+    else { engineOn(); tone(880, 0, 0.06, 'square', 0.04); }
+  }
+
   function quit() {
     if (st.mode === 'title') return;
+    st.paused = false;
     stopWhistle(); engineOff();
     if (st.score > st.hi) { st.hi = st.score; store.set('hi', String(st.hi)); }
     st.bomb = null; st.parts = []; st.debris = []; st.flash = 0; st.shake = 0;
@@ -519,6 +535,7 @@
 
   function action() {
     ac();
+    if (st.paused) { togglePause(); return; }
     if (st.mode === 'title' || st.mode === 'over') newGame();
     else if (st.mode === 'landed') { st.level++; startLevel(); }
     else if (st.mode === 'play') dropBomb();
@@ -526,6 +543,7 @@
 
   // ---- Update ----
   function update() {
+    if (st.paused) return;
     st.t++;
     if (st.flash > 0) st.flash--;
     if (st.shake > 0) st.shake--;
@@ -649,8 +667,9 @@
       text('SPACE/TAP   DROP A BOMB', 4, 7, P.fg);
       text('C           ZX81/COLOUR', 4, 8, P.fg);
       text('M           SOUND', 4, 9, P.fg);
-      text('Q           QUIT', 4, 10, P.fg);
-      text('ONE BOMB IN THE AIR AT A TIME', 0, 12, P.dim, { center: true });
+      text('P           PAUSE', 4, 10, P.fg);
+      text('Q           QUIT', 4, 11, P.fg);
+      text('ONE BOMB IN THE AIR AT A TIME', 0, 13, P.dim, { center: true });
       drawCity(demo.heights, demo.styles);
       drawGround();
       drawPlane(demo.x, 14 * 8);
@@ -680,7 +699,13 @@
         if ((st.t >> 4) & 1) text('CITY CLEARED - LANDING', 0, 23, P.fg, { center: true, inverse: true });
       }
 
-      if (st.mode === 'over') {
+      if (st.paused) {
+        box([
+          { t: 'PAUSED', inv: true },
+          null,
+          { t: 'P OR TAP TO RESUME' },
+        ], 8);
+      } else if (st.mode === 'over') {
         box([
           { t: 'CRASHED!', inv: true },
           null,
@@ -713,12 +738,17 @@
     draw();
     const onTitle = st.mode === 'title';
     if (quitBtn.disabled !== onTitle) quitBtn.disabled = onTitle;
+    if (pauseBtn.disabled === canPause()) pauseBtn.disabled = !canPause();
+    const pauseText = st.paused ? 'Resume' : 'Pause';
+    if (pauseLabel.textContent !== pauseText) pauseLabel.textContent = pauseText;
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
 
   // ---- Input ----
   const quitBtn = document.getElementById('quitBtn');
+  const pauseBtn = document.getElementById('pauseBtn');
+  const pauseLabel = document.getElementById('pauseLabel');
   const palLabel = document.getElementById('palLabel');
   const sndLabel = document.getElementById('sndLabel');
   function syncLabels() {
@@ -750,6 +780,7 @@
     else if (e.code === 'KeyM') toggleSound();
     else if (e.code === 'KeyF' && fsSupported) toggleFullscreen();
     else if (e.code === 'KeyQ') quit();
+    else if (e.code === 'KeyP') togglePause();
   });
 
   // ---- Fullscreen (Android and desktop; iPhone Safari has no API, so the button stays hidden) ----
@@ -786,5 +817,8 @@
   document.getElementById('palBtn').addEventListener('click', e => { togglePal(); e.currentTarget.blur(); });
   document.getElementById('sndBtn').addEventListener('click', e => { toggleSound(); e.currentTarget.blur(); });
   quitBtn.addEventListener('click', e => { quit(); e.currentTarget.blur(); });
+  pauseBtn.addEventListener('click', e => { togglePause(); e.currentTarget.blur(); });
+  // switching app or tab mid-game pauses it
+  document.addEventListener('visibilitychange', () => { if (document.hidden && !st.paused) togglePause(); });
 })();
 </script>
