@@ -22,6 +22,7 @@
     --key: #2f2d34;
     --key-top: #3d3a43;
     --key-text: #eeeae0;
+    --ver: #7d7a85;       /* version number grey */
     --font-pixel: "Press Start 2P", "Courier New", monospace;
     --font-term: "VT323", "Courier New", monospace;
     color-scheme: dark;
@@ -63,6 +64,8 @@
   }
   .strip .brand { color: var(--key-text); }
   .strip .brand b { color: var(--accent); font-weight: normal; }
+  /* bumped by .githooks/pre-commit on every commit */
+  .strip .ver { color: var(--ver); font-size: 8px; margin-left: 6px; text-transform: none; }
   .tv {
     position: relative;
     background: var(--bezel);
@@ -239,7 +242,7 @@
 
 <div class="unit">
   <div class="strip">
-    <span class="brand">Bomber <b>81</b></span>
+    <span class="brand">Bomber <b>81</b> <span class="ver">v1.0</span></span>
     <span>Sinclair ZX81 · 16K</span>
   </div>
   <div class="tv">

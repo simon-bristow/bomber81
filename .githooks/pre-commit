@@ -1,0 +1,10 @@
+#!/bin/sh
+# Bump the version shown in the page header by 0.01 on every commit (v1.0 -> v1.01 -> v1.02 ...).
+# Enabled with: git config core.hooksPath .githooks
+f=index.html
+cur=$(sed -n 's/.*<span class="ver">v\([0-9.]*\)<\/span>.*/\1/p' "$f" | head -1)
+[ -z "$cur" ] && exit 0
+new=$(awk -v v="$cur" 'BEGIN { printf "%.2f", v + 0.01 }')
+sed -i.bak "s/<span class=\"ver\">v$cur<\/span>/<span class=\"ver\">v$new<\/span>/" "$f" && rm -f "$f.bak"
+git add "$f"
+echo "Version bumped: v$cur -> v$new"
