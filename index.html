@@ -122,34 +122,36 @@
   button:active { transform: translateY(2px); border-bottom-width: 2px; }
   button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   button .k { color: var(--accent); margin-right: 6px; }
-  #bombBtn { flex: 1 1 220px; max-width: 360px; font-size: 13px; padding-block: 16px 14px; }
   button:disabled { opacity: .35; cursor: default; }
   button:disabled:active { transform: none; border-bottom-width: 4px; }
   .rotate { display: none; }
   #fsBtn[hidden] { display: none !important; }
 
-  /* Phone in portrait: full-width bomb button on its own row, small buttons well clear below */
+  /* Bomb button lines up with the game screen's edges (inside the 14px bezel + 2px border); small buttons well clear below */
+  .keys { gap: 8px; row-gap: 16px; padding-inline: 16px; }
+  #bombBtn {
+    flex: 1 1 100%;
+    max-width: none;
+    font-size: 16px;
+    padding-block: 30px 26px;
+    background: linear-gradient(#5a2422, #3a1716);
+  }
+  #palBtn, #sndBtn, #fsBtn, #quitBtn {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 10px 4px 8px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+  }
+  #palBtn .k, #sndBtn .k, #fsBtn .k, #quitBtn .k { margin-right: 0; }
+  button, .rotate { line-height: 1.6; }
   @media (max-width: 600px) {
-    .keys { gap: 8px; row-gap: 16px; }
-    #bombBtn {
-      flex: 1 1 100%;
-      max-width: none;
-      font-size: 14px;
-      padding-block: 24px 20px;
-      background: linear-gradient(#5a2422, #3a1716);
-    }
-    #palBtn, #sndBtn, #fsBtn, #quitBtn {
-      flex: 1 1 0;
-      min-width: 0;
-      font-size: 9px;
-      padding: 10px 4px 8px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 6px;
-    }
-    #palBtn .k, #sndBtn .k, #fsBtn .k, #quitBtn .k { margin-right: 0; }
-    button, .rotate { line-height: 1.6; }
+    .tv { padding: 10px; }
+    .keys { padding-inline: 12px; }
+    #bombBtn { font-size: 14px; padding-block: 34px 30px; }
+    #palBtn, #sndBtn, #fsBtn, #quitBtn { font-size: 9px; }
   }
 
   /* Phone in portrait: suggest turning it */
