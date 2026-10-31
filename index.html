@@ -123,14 +123,8 @@
   button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   button .k { color: var(--accent); margin-right: 6px; }
   #bombBtn { flex: 1 1 220px; max-width: 360px; font-size: 13px; padding-block: 16px 14px; }
-  .note {
-    max-width: 62ch;
-    text-align: center;
-    line-height: 1.15;
-    color: var(--label);
-    opacity: .8;
-    margin: 0;
-  }
+  button:disabled { opacity: .35; cursor: default; }
+  button:disabled:active { transform: none; border-bottom-width: 4px; }
   .rotate { display: none; }
   #fsBtn[hidden] { display: none !important; }
 
@@ -144,7 +138,7 @@
       padding-block: 24px 20px;
       background: linear-gradient(#5a2422, #3a1716);
     }
-    #palBtn, #sndBtn, #fsBtn {
+    #palBtn, #sndBtn, #fsBtn, #quitBtn {
       flex: 1 1 0;
       min-width: 0;
       font-size: 9px;
@@ -154,7 +148,7 @@
       align-items: center;
       gap: 6px;
     }
-    #palBtn .k, #sndBtn .k, #fsBtn .k { margin-right: 0; }
+    #palBtn .k, #sndBtn .k, #fsBtn .k, #quitBtn .k { margin-right: 0; }
     button, .rotate { line-height: 1.6; }
   }
 
@@ -187,15 +181,16 @@
       height: 100%;
       display: grid;
       grid-template-columns: var(--side) auto var(--side);
-      grid-template-rows: repeat(3, 1fr);
+      grid-template-rows: repeat(4, 1fr);
       grid-template-areas:
-        "pal tv bomb"
-        "snd tv bomb"
-        "fs  tv bomb";
+        "pal  tv bomb"
+        "snd  tv bomb"
+        "fs   tv bomb"
+        "quit tv bomb";
       gap: 8px;
       align-items: stretch;
     }
-    .strip, .note, .rotate { display: none; }
+    .strip, .rotate { display: none; }
     .keys { display: contents; }
     .tv {
       grid-area: tv;
@@ -222,6 +217,7 @@
     #palBtn { grid-area: pal; }
     #sndBtn { grid-area: snd; }
     #fsBtn { grid-area: fs; }
+    #quitBtn { grid-area: quit; }
     #bombBtn {
       grid-area: bomb;
       max-width: none;
@@ -231,7 +227,7 @@
       background: linear-gradient(#5a2422, #3a1716);
     }
     /* no fullscreen button: let the other two share the column */
-    .unit.no-fs { grid-template-rows: repeat(2, 1fr); grid-template-areas: "pal tv bomb" "snd tv bomb"; }
+    .unit.no-fs { grid-template-rows: repeat(3, 1fr); grid-template-areas: "pal tv bomb" "snd tv bomb" "quit tv bomb"; }
   }
 </style>
 
@@ -248,9 +244,9 @@
     <button id="palBtn" type="button"><span class="k">C</span><span id="palLabel">Colour</span></button>
     <button id="sndBtn" type="button"><span class="k">M</span><span id="sndLabel">Sound on</span></button>
     <button id="fsBtn" type="button" hidden><span class="k">F</span><span id="fsLabel">Full screen</span></button>
+    <button id="quitBtn" type="button" disabled><span class="k">Q</span>Quit</button>
   </div>
   <p class="rotate">Turn your phone sideways to fill the screen</p>
-  <p class="note">Your fuel is gone and the plane drops one row every time it crosses the screen. Flatten the city with bombs, one in the air at a time, and touch down on the empty street. After the 1982 ZX81 "Bomber" and the Blitz games that followed Atari's Canyon Bomber.</p>
 </div>
 
 <script>
@@ -504,6 +500,14 @@
     tune([523, 659, 784, 1047, 0, 784, 1047, 1319], 0.11, 0.05);
   }
 
+  function quit() {
+    if (st.mode === 'title') return;
+    stopWhistle(); engineOff();
+    if (st.score > st.hi) { st.hi = st.score; store.set('hi', String(st.hi)); }
+    st.bomb = null; st.parts = []; st.debris = []; st.flash = 0; st.shake = 0;
+    st.mode = 'title';
+  }
+
   function action() {
     ac();
     if (st.mode === 'title' || st.mode === 'over') newGame();
@@ -636,10 +640,11 @@
       text('SPACE/TAP   DROP A BOMB', 4, 7, P.fg);
       text('C           ZX81/COLOUR', 4, 8, P.fg);
       text('M           SOUND', 4, 9, P.fg);
-      text('ONE BOMB IN THE AIR AT A TIME', 0, 11, P.dim, { center: true });
+      text('Q           QUIT', 4, 10, P.fg);
+      text('ONE BOMB IN THE AIR AT A TIME', 0, 12, P.dim, { center: true });
       drawCity(demo.heights, demo.styles);
       drawGround();
-      drawPlane(demo.x, 13 * 8);
+      drawPlane(demo.x, 14 * 8);
       text('SPACE OR TAP TO START', 4, 23, P.fg);
       // ZX81 inverse "K" cursor
       if ((st.t >> 5) & 1) text('K', 26, 23, P.fg, { inverse: true });
@@ -697,11 +702,14 @@
     last = now;
     while (acc >= 1000 / 60) { update(); acc -= 1000 / 60; }
     draw();
+    const onTitle = st.mode === 'title';
+    if (quitBtn.disabled !== onTitle) quitBtn.disabled = onTitle;
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
 
   // ---- Input ----
+  const quitBtn = document.getElementById('quitBtn');
   const palLabel = document.getElementById('palLabel');
   const sndLabel = document.getElementById('sndLabel');
   function syncLabels() {
@@ -732,6 +740,7 @@
     } else if (e.code === 'KeyC') togglePal();
     else if (e.code === 'KeyM') toggleSound();
     else if (e.code === 'KeyF' && fsSupported) toggleFullscreen();
+    else if (e.code === 'KeyQ') quit();
   });
 
   // ---- Fullscreen (Android and desktop; iPhone Safari has no API, so the button stays hidden) ----
@@ -767,5 +776,6 @@
   // blur so a later Space press drops a bomb instead of re-pressing the button
   document.getElementById('palBtn').addEventListener('click', e => { togglePal(); e.currentTarget.blur(); });
   document.getElementById('sndBtn').addEventListener('click', e => { toggleSound(); e.currentTarget.blur(); });
+  quitBtn.addEventListener('click', e => { quit(); e.currentTarget.blur(); });
 })();
 </script>
