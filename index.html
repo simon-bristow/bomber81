@@ -168,7 +168,8 @@
     }
   }
 
-  /* Phone in landscape: screen fills the height, controls on either side */
+  /* Phone in landscape: screen as tall as possible, full-width bomb button under it,
+     small buttons beside the screen only, so nothing sits next to the bomb button */
   @media (orientation: landscape) and (max-height: 540px) {
     html, body { overflow: hidden; overscroll-behavior: none; }
     body {
@@ -178,19 +179,20 @@
     }
     .unit {
       --side: clamp(72px, 13vw, 150px);
-      --screen-h: calc(100dvh - 12px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+      --bomb-h: clamp(52px, 16dvh, 72px);
+      --screen-h: calc(100dvh - 12px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - var(--bomb-h) - 8px);
       width: auto;
       height: 100%;
       display: grid;
       grid-template-columns: var(--side) auto var(--side);
-      grid-template-rows: repeat(4, 1fr);
+      grid-template-rows: 1fr 1fr var(--bomb-h);
       grid-template-areas:
-        "pal  tv bomb"
-        "snd  tv bomb"
-        "fs   tv bomb"
-        "quit tv bomb";
+        "pal tv   fs"
+        "snd tv   quit"
+        ".   bomb .";
       gap: 8px;
       align-items: stretch;
+      align-content: center;
     }
     .strip, .rotate { display: none; }
     .keys { display: contents; }
@@ -223,13 +225,15 @@
     #bombBtn {
       grid-area: bomb;
       max-width: none;
-      font-size: 11px;
+      font-size: 13px;
       line-height: 1.6;
       padding-block: 8px;
+      flex-direction: row;
+      gap: 12px;
       background: linear-gradient(#5a2422, #3a1716);
     }
-    /* no fullscreen button: let the other two share the column */
-    .unit.no-fs { grid-template-rows: repeat(3, 1fr); grid-template-areas: "pal tv bomb" "snd tv bomb" "quit tv bomb"; }
+    /* no fullscreen button (iPhone): Quit takes the whole right-hand column */
+    .unit.no-fs { grid-template-areas: "pal tv quit" "snd tv quit" ". bomb ."; }
   }
 </style>
 
